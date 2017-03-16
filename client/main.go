@@ -1,12 +1,11 @@
 package main
 
 import (
-	"encoding/hex"
+	"encoding/binary"
+	"fmt"
 	"io"
 	"math"
 	"net"
-
-	"github.com/lunixbochs/struc"
 )
 
 // message format:
@@ -77,13 +76,17 @@ func main() {
 	putRequest(conn, "exampleRegion", "testKey", "testValue")
 
 	response := make([]byte, 1000)
-	bytes, err := conn.Read(response)
-	if err != nil {
-		panic(err)
+	bytesRead := 0
+	for bytesRead < 9 {
+		bytes, err := conn.Read(response[bytesRead:])
+		if err != nil {
+			panic(err)
+		}
+		bytesRead = bytesRead + bytes
 	}
-	if bytes != 0 {
-		hex.EncodeToString(response)
-	}
+
+	response = response[:bytesRead]
+	fmt.Printf("Response length %d into string of length %d, string %q\n", bytesRead, len(response), response)
 }
 
 // getMessage().addXPart() is what we seem to do.
@@ -115,7 +118,7 @@ type RequestHeader struct {
 }
 
 type PackedString struct {
-	Size  uint16 
+	Size  uint16
 	Value []byte
 }
 
@@ -127,8 +130,25 @@ type PutRequest struct {
 	Value       PackedString
 }
 
-func (putRequest PutRequest) writeTo (w io.Writer) {
-	w.Write(putRequest.Header
+func (requestHeader RequestHeader) writeTo(w io.Writer) {
+	binary.Write(w, binary.BigEndian, requestHeader.Size)
+	binary.Write(w, binary.BigEndian, requestHeader.RequestType)
+	binary.Write(w, binary.BigEndian, requestHeader.Version)
+	binary.Write(w, binary.BigEndian, requestHeader.RequestId)
+	binary.Write(w, binary.BigEndian, requestHeader.Flag)
+}
+
+func (packedString PackedString) writeTo(w io.Writer) {
+	binary.Write(w, binary.BigEndian, packedString.Size)
+	w.Write(packedString.Value)
+}
+
+func (putRequest PutRequest) writeTo(w io.Writer) {
+	putRequest.Header.writeTo(w)
+	putRequest.RegionName.writeTo(w)
+	putRequest.Key.writeTo(w)
+	binary.Write(w, binary.BigEndian, putRequest.ValueHeader)
+	putRequest.Value.writeTo(w)
 }
 
 func packString(s string) PackedString {
@@ -157,9 +177,9 @@ func putRequest(writer io.Writer, region string, key string, value string) {
 		Value:      packString(value),
 	}
 
-	err := struc.Pack(writer, request)
+	request.writeTo(writer)
 
-	if err != nil {
-		panic(err)
-	}
+	//if err != nil {
+	//panic(err)
+	//}
 }
