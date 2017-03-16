@@ -1,35 +1,74 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"io"
+	"math"
 	"net"
+
+	"github.com/lunixbochs/struc"
 )
 
 // message format:
 // header byte
 // get/put/whatever.
 
+// object types
 const (
-	GEODE_NULL   byte = 41
-	GEODE_STRING byte = 42
-	GEODE_HEADER byte = 110
-)
-const (
-	GET_REQUEST      uint32 = 0
-	RESPONSE         uint32 = 1
-	PARTIAL_RESPONSE uint32 = 2
-	PUT_REQUEST      uint32 = 7
-	PUTALL           uint32 = 56
-	GETALL           uint32 = 57
-	EXECUTE_FUNCTION uint32 = 59
+	NULL          byte = 41
+	UTF_STRING    byte = 42
+	BYTE_ARRAY    byte = 43
+	SHORT_ARRAY   byte = 44
+	INTEGER_ARRAY byte = 45
+	LONG_ARRAY    byte = 46
+	FLOAT_ARRAY   byte = 47
+	DOUBLE_ARRAY  byte = 48
+
+	STRING_ARRAY byte = 64
+
+	ARRAY     byte = 52
+	BOOLEAN   byte = 53
+	CHARACTER byte = 54
+	BYTE      byte = 55
+	SHORT     byte = 56
+	INTEGER   byte = 57
+	LONG      byte = 58
+	FLOAT     byte = 59
+	DOUBLE    byte = 60
+
+	SET byte = 66
+	MAP byte = 67
+
+	DATA_SERIALIZATION byte = 37
+	PDX_SERIALIZATION  byte = 93
+	USER_SERIALIZATION byte = 40
 )
 
+const GEODE_HEADER byte = 110
+
+// request types
+const (
+	GET_REQUEST      = 0
+	RESPONSE         = 1
+	PARTIAL_RESPONSE = 2
+	PUT_REQUEST      = 7
+	PUTALL           = 56
+	GETALL           = 57
+	EXECUTE_FUNCTION = 59
+)
+
+////type Header struct {
+//Size        int32
+//RequestType uint8
+//Version     uint8
+//RequestID   int32
+//flag        uint8
+//}
+
+// Java modified UTF-8: unsigned short len. hope we don't run into the "modified" part.
+
 func main() {
-	conn, err := net.Dial("tcp", "poland.gemstone.com:40404")
+	conn, err := net.Dial("tcp", "localhost:40404")
 	if err != nil {
 		panic(err)
 	}
@@ -60,62 +99,67 @@ func main() {
 
 // modified UTF-8 because java yay!
 
+// request: 4 + 2 + 4 + 1 = 11 bytes
+// size         int32
+// RequestType  byte
+// Version      byte
+// RequestID    int32
+// flag         byte
+
+type RequestHeader struct {
+	Size        int32
+	RequestType int16
+	Version     int16
+	RequestId   int32
+	Flag        uint8
+}
+
+type PackedString struct {
+	Size  uint16 
+	Value []byte
+}
+
+type PutRequest struct {
+	Header      RequestHeader
+	RegionName  PackedString
+	Key         PackedString
+	ValueHeader int32
+	Value       PackedString
+}
+
+func (putRequest PutRequest) writeTo (w io.Writer) {
+	w.Write(putRequest.Header
+}
+
+func packString(s string) PackedString {
+	b := []byte(s)
+	if len(b) > math.MaxUint16 {
+		panic("string too long.")
+	}
+	return PackedString{uint16(len(b)), b}
+}
+
 // Request to put to a region.
 func putRequest(writer io.Writer, region string, key string, value string) {
-	messageBody := newPutRequest(region, key, value)
+	//messageBody := newPutRequest(region, key, value)
 	// 17 byte message header
 	// int: 32 bits, signed -- all ints
 	// first 17 bytes:
 	// [ message type | message len | number of parts | txnID || 1 byte flags ]
 	// txnId -1 for now
 	// flags 0 for now
-	bodyLen := messageBody.Len()
+	//bodyLen := messageBody.Len()
 
-	binary.Write(writer, binary.BigEndian, int32(GEODE_PUT))
-	binary.Write(writer, binary.BigEndian, int32(bodyLen)+17)
-	binary.Write(writer, binary.BigEndian, int32(7))
-	binary.Write(writer, binary.BigEndian, int32(-1))
-	writer.Write([]byte{0})
-	bodyBytes, err := messageBody.WriteTo(writer)
+	request := PutRequest{
+		Header:     RequestHeader{Size: 1000 /* FIXME */, RequestType: PUT_REQUEST, Version: 110 /*fixme*/, RequestId: 1, Flag: 0},
+		RegionName: packString(region),
+		Key:        packString(key),
+		Value:      packString(value),
+	}
+
+	err := struc.Pack(writer, request)
+
 	if err != nil {
 		panic(err)
-	} else {
-		if bodyBytes != int64(bodyLen) {
-			panic(fmt.Sprintf("wrong number of bytes? %d %d", bodyBytes, bodyLen))
-		}
 	}
-}
-
-// 7 parts:
-// 1. region
-// 2. key
-// 3. value
-func newPutRequest(region string, key string, value string) *bytes.Buffer {
-	// Make the message body because we need len to send the message.
-	messageBody := new(bytes.Buffer)
-	writeStringPart(messageBody, region)
-
-	messageBody.WriteByte(GEODE_NULL)
-	binary.Write(messageBody, binary.BigEndian, 0)
-	writeStringPart(messageBody, key)
-	binary.Write(messageBody, binary.BigEndian, 0)
-	writeStringPart(messageBody, value)
-	messageBody.Write([]byte{GEODE_NULL})
-
-	return messageBody
-}
-
-// for each part, we need length plus one boolean flag (0 for now)
-// Two bytes of length, then null, followed by modified UTF-8.
-// len as short
-//func writeString(Writer conn, String message) {
-func writeStringPart(writer io.Writer, message string) {
-	//if len(message) > 65536 {
-	//panic("Message too long!")
-	//}
-	len := uint16(len(message))
-	//
-	//binary.Write(writer, binary.BigEndian, len)
-	//writer.Write([]byte{0})
-	writer.Write([]byte(message))
 }
