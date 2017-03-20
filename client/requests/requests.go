@@ -22,14 +22,6 @@ func ConnectGeode(hostname string) (io.ReadWriteCloser, error) {
 	return conn, nil
 }
 
-type RequestHeader struct {
-	Size        int32
-	RequestType int16
-	Version     int16
-	RequestId   int32
-	Flag        uint8
-}
-
 type PackedString struct {
 	Size  uint16
 	Value []byte
@@ -41,14 +33,6 @@ type PutRequest struct {
 	Key         PackedString
 	ValueHeader int32
 	Value       PackedString
-}
-
-func (requestHeader RequestHeader) writeTo(w io.Writer) {
-	binary.Write(w, binary.BigEndian, requestHeader.Size)
-	binary.Write(w, binary.BigEndian, requestHeader.RequestType)
-	binary.Write(w, binary.BigEndian, requestHeader.Version)
-	binary.Write(w, binary.BigEndian, requestHeader.RequestId)
-	binary.Write(w, binary.BigEndian, requestHeader.Flag)
 }
 
 func (packedString PackedString) writeTo(w io.Writer) {
@@ -65,6 +49,9 @@ func (putRequest PutRequest) writeTo(w io.Writer) {
 }
 
 func packString(s string) PackedString {
+	// TODO:
+	// Java uses modified UTF-8. Eventually, pack according to that
+	// (or interpret properly on the other side).
 	b := []byte(s)
 	if len(b) > math.MaxUint16 {
 		panic("string too long.")

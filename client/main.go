@@ -6,21 +6,6 @@ import (
 	"github.com/galen-pivotal/geode-go/client/requests"
 )
 
-// message format:
-// header byte
-// get/put/whatever.
-
-// object types
-////type Header struct {
-//Size        int32
-//RequestType uint8
-//Version     uint8
-//RequestID   int32
-//flag        uint8
-//}
-
-// Java modified UTF-8: unsigned short len. hope we don't run into the "modified" part.
-
 func main() {
 	conn, err := requests.ConnectGeode("localhost:40404")
 	if err != nil {
@@ -43,8 +28,6 @@ func main() {
 	response = response[:bytesRead]
 	fmt.Printf("Response length %d into string of length %d, string %q\n", bytesRead, len(response), response)
 }
-
-// getMessage().addXPart() is what we seem to do.
 
 // format for the entire message of a put:
 // 1. Region name
